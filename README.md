@@ -1,8 +1,29 @@
-# FastSchemaDumper
+# fast_schema_dumper
 
-TODO: Delete this and the text below, and describe your gem
+A super fast alternative to ActiveRecord::SchemaDumper. Currently only MySQL is supported.
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/fast_schema_dumper`. To experiment with that code, run `bin/console` for an interactive prompt.
+## Usage
+
+### Ridgepole integration
+
+Requiring `fast_schema_dumper/ridgepole` will overwrite `Ridgepole::Dumper.dump`, which will force Ridgepole to use fast_schema_dumper.
+
+```
+RUBYOPT='-rridgepole -rfast_schema_dumper' ridgepole ... --apply
+```
+
+#### Environment variables for Ridgepole
+
+The Ridgepole integration is configurable via envionment variables.
+
+- `FAST_SCHEMA_DUMPER_MODE`:
+  - `disabled`: Use the original ActiveRecord dumper
+  - `verify`: Run both dumpers and verify output matches (useful for testing)
+  - Any other value or unset: Use FastSchemaDumper (default)
+- `FAST_SCHEMA_DUMPER_SUPPRESS_MESSAGE=1`: Suppress the warning message when FastSchemaDumper is enabled
+
+I recommend using only fast_schema_dumper in local development environments, and configuring `FAST_SCHEMA_DUMPER_MODE=verify` in CI setups.
+
 
 ## Installation
 
@@ -17,10 +38,6 @@ If bundler is not being used to manage dependencies, install the gem by executin
 ```bash
 gem install fast_schema_dumper
 ```
-
-## Usage
-
-TODO: Write usage instructions here
 
 ## Development
 
