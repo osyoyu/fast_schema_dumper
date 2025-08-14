@@ -153,6 +153,8 @@ module FastSchemaDumper
           referenced_table: fk['REFERENCED_TABLE_NAME'],
           referenced_column: fk['REFERENCED_COLUMN_NAME'],
           constraint_name: fk['CONSTRAINT_NAME'],
+          on_delete: fk['DELETE_RULE'],
+          on_update: fk['UPDATE_RULE'],
         }
       end
 
