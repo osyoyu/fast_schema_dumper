@@ -449,7 +449,13 @@ module FastSchemaDumper
         end
 
         unless order_hash.empty?
-          idx_def += ", order: { #{order_hash.map { |k, v| "#{k}: :#{v}" }.join(', ')} }"
+          if index_data[:columns].size == 1
+            # For single column index, use simplified syntax
+            idx_def += ", order: :#{order_hash.values.first}"
+          else
+            # For compound index, use hash syntax
+            idx_def += ", order: { #{order_hash.map { |k, v| "#{k}: :#{v}" }.join(', ')} }"
+          end
         end
       end
 
