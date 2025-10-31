@@ -17,9 +17,9 @@ module Ridgepole
         puts "Warning: fast_schema_dumper is enabled in verify mode" unless ENV['FAST_SCHEMA_DUMPER_SUPPRESS_MESSAGE'] == '1'
         original_results = original_dump
         fast_results = fast_dump
+        File.write("orig.txt", original_results)
+        File.write("fast.txt", fast_results)
         if original_results != fast_results
-          File.write("orig.txt", original_results)
-          File.write("fast.txt", fast_results)
           raise "Dumped schema do not match between ActiveRecord::SchemaDumper and fast_schema_dumper. This is a fast_schema_dumper bug."
         end
         fast_results
