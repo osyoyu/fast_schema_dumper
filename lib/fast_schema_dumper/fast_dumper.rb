@@ -121,6 +121,39 @@ module FastSchemaDumper
       ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME
     ")
 
+      # Get CHECK constraints (MySQL 8.0.16+)
+      result = conn.exec_query("
+      SELECT COUNT(*) as count
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = 'information_schema'
+        AND TABLE_NAME = 'CHECK_CONSTRAINTS'
+    ")
+      check_constraints_data = if result.first['count'] > 0
+        conn.exec_query("
+        SELECT
+          tc.CONSTRAINT_NAME,
+          tc.TABLE_NAME,
+          cc.CHECK_CLAUSE
+        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+        JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+          ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA
+          AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+        WHERE tc.TABLE_SCHEMA = DATABASE()
+          AND tc.CONSTRAINT_TYPE = 'CHECK'
+        ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME
+      ")
+      else
+        []
+      end
+
+      check_constraints_by_table = check_constraints_data.each_with_object({}) do |ck, hash|
+        hash[ck['TABLE_NAME']] ||= []
+        hash[ck['TABLE_NAME']] << {
+          constraint_name: ck['CONSTRAINT_NAME'],
+          check_clause: ck['CHECK_CLAUSE']
+        }
+      end
+
       # Organize columns by table
       columns_by_table = columns_data.each_with_object({}) do |col, hash|
         hash[col['TABLE_NAME']] ||= []
@@ -133,6 +166,7 @@ module FastSchemaDumper
           table_name,
           columns: columns_by_table[table_name] || [],
           indexes: indexes_by_table[table_name] || {},
+          check_constraints: check_constraints_by_table[table_name] || {},
           options: table_options[table_name]
         )
         @output << ""
@@ -218,7 +252,7 @@ module FastSchemaDumper
       end
     end
 
-    def dump_table(table_name, columns:, indexes:, options:)
+    def dump_table(table_name, columns:, indexes:, check_constraints:, options:)
       table_def = "create_table \"#{table_name}\""
 
       # id (primary key)
@@ -294,6 +328,31 @@ module FastSchemaDumper
 
       sorted_indexes.each do |index_name, index_data|
         @output << "  #{format_index(index_name, index_data)}"
+      end
+
+      # Respect the CHECK constraint
+      #
+      # NOTE: original dumper sorts it according to the clause
+      # ref: https://github.com/rails/rails/blob/cddcba97c369e12e2573af5af9eda16e6f530a29/activerecord/lib/active_record/schema_dumper.rb#L284
+      check_constraints.sort_by { |c| c[:check_clause] }.each do |constraint|
+        check_clause = constraint[:check_clause]
+
+        # drop redundant parentheses at the most outer level for compatibility with the original dumper
+        if check_clause.start_with?("(") && check_clause.end_with?(")")
+          check_clause = check_clause[1..-2]
+        end
+
+        check_clause.gsub!(/\\'/, "'") # don't escape single quotes for compatibility with the original dumper
+
+        ck_line = "  t.check_constraint \"#{check_clause}\""
+
+        # Check if constraint name is custom (doesn't start with "chk_rails_")
+        # Rails generates constraint names starting with "chk_rails_" followed by a hash
+        if !constraint[:constraint_name].start_with?("chk_rails_")
+          ck_line += ", name: \"#{constraint[:constraint_name]}\""
+        end
+
+        @output << ck_line
       end
 
       @output << "end"
