@@ -121,6 +121,31 @@ module FastSchemaDumper
       ORDER BY kcu.TABLE_NAME, kcu.CONSTRAINT_NAME
     ")
 
+      # Get check constraints (MySQL 8.0.16+)
+      result = conn.exec_query("
+      SELECT COUNT(*) as count
+      FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = 'information_schema'
+        AND TABLE_NAME = 'CHECK_CONSTRAINTS'
+    ")
+      check_constraints_data = if result.first['count'] > 0
+        conn.exec_query("
+        SELECT
+          tc.CONSTRAINT_NAME,
+          tc.TABLE_NAME,
+          cc.CHECK_CLAUSE
+        FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+        JOIN INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+          ON tc.CONSTRAINT_SCHEMA = cc.CONSTRAINT_SCHEMA
+          AND tc.CONSTRAINT_NAME = cc.CONSTRAINT_NAME
+        WHERE tc.TABLE_SCHEMA = DATABASE()
+          AND tc.CONSTRAINT_TYPE = 'CHECK'
+        ORDER BY tc.TABLE_NAME, tc.CONSTRAINT_NAME
+      ")
+      else
+        []
+      end
+
       # Organize columns by table
       columns_by_table = columns_data.each_with_object({}) do |col, hash|
         hash[col['TABLE_NAME']] ||= []
@@ -167,6 +192,14 @@ module FastSchemaDumper
         end
       end
 
+      check_constraints_by_table = check_constraints_data.each_with_object({}) do |ck, hash|
+        hash[ck['TABLE_NAME']] ||= []
+        hash[ck['TABLE_NAME']] << {
+          constraint_name: ck['CONSTRAINT_NAME'],
+          check_clause: ck['CHECK_CLAUSE']
+        }
+      end
+
       # Sort by table_name first, then by referenced_table name, then by column name
       all_foreign_keys.sort_by { |fk| [fk[:table_name], fk[:fk_data][:referenced_table], fk[:fk_data][:column]] }.each do |fk|
         fk_line = "add_foreign_key \"#{fk[:table_name]}\", \"#{fk[:fk_data][:referenced_table]}\""
@@ -191,6 +224,25 @@ module FastSchemaDumper
         end
 
         @output << fk_line
+      end
+
+      # Check constraints
+      # Sort by table_name first, then by constraint_name
+      if check_constraints_by_table.any?
+        @output << ""
+        check_constraints_by_table.sort.each do |table_name, constraints|
+          constraints.sort_by { |c| c[:constraint_name] }.each do |constraint|
+            ck_line = "add_check_constraint \"#{table_name}\", \"#{constraint[:check_clause]}\""
+
+            # Check if constraint name is custom (doesn't start with "chk_rails_")
+            # Rails generates constraint names starting with "chk_rails_" followed by a hash
+            if !constraint[:constraint_name].start_with?("chk_rails_")
+              ck_line += ", name: \"#{constraint[:constraint_name]}\""
+            end
+
+            @output << ck_line
+          end
+        end
       end
 
       stream.print @output.join("\n")
