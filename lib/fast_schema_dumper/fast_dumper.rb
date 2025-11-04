@@ -338,8 +338,14 @@ module FastSchemaDumper
         check_clause = constraint[:check_clause]
 
         # drop redundant parentheses at the most outer level for compatibility with the original dumper
+        # Example: "((a > 0) and (b > 0))" => "(a > 0) and (b > 0)"
         if check_clause.start_with?("(") && check_clause.end_with?(")")
-          check_clause = check_clause[1..-2]
+          # Check if removing outer parens would break the expression by ensuring parentheses are balanced after removal
+          # For example, it shouldn’t remove the outer parentheses as in the following case, because doing so would break the balance: "(a > 0) and (b > 0)"
+          inner = check_clause[1..-2]
+          if balanced_parentheses?(inner)
+            check_clause = inner
+          end
         end
 
         check_clause.gsub!(/\\'/, "'") # don't escape single quotes for compatibility with the original dumper
@@ -524,6 +530,16 @@ module FastSchemaDumper
       end
 
       idx_def
+    end
+
+    def balanced_parentheses?(str)
+      depth = 0
+      str.each_char do |char|
+        depth += 1 if char == '('
+        depth -= 1 if char == ')'
+        return false if depth < 0
+      end
+      depth == 0
     end
   end
 end
